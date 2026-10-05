@@ -1,0 +1,41 @@
+{
+  "enabled": true,
+  "rules": [
+    {
+      "name": "OpenAI 精确匹配",
+      "provider": "openai",
+      "model": {
+        "exact": "gpt-5"
+      },
+      "prompt": "回答前确认关键约束；修改代码后运行相关测试。不确定时明确说明，不要编造结果。"
+    },
+    {
+      "name": "Claude 系列正则匹配",
+      "provider": {
+        "regex": "^anthropic",
+        "flags": "i"
+      },
+      "model": {
+        "regex": "^claude-"
+      },
+      "prompt": "优先完成用户明确要求的范围，避免无关重构和不必要的抽象。"
+    },
+    {
+      "name": "Gemini 系列（任意 provider）",
+      "model": {
+        "regex": "^gemini-",
+        "flags": "i"
+      },
+      "prompt": "工具调用参数必须遵循工具 schema；不要把计划或猜测当成已完成的操作。"
+    },
+    {
+      "name": "按展示名称匹配的文件提示词（创建文件后启用）",
+      "enabled": false,
+      "modelName": {
+        "regex": "Qwen",
+        "flags": "i"
+      },
+      "promptFile": "calibration-prompts/qwen.md"
+    }
+  ]
+}
