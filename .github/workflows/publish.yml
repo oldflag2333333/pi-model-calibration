@@ -25,7 +25,7 @@ jobs:
 
   publish:
     needs: check
-    if: github.repository == 'oldflag2333333/model-calibration'
+    if: github.repository == 'oldflag2333333/pi-model-calibration'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

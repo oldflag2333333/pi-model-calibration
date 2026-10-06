@@ -4,7 +4,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oldflag2333333/model-calibration.git"
+    "url": "git+https://github.com/oldflag2333333/pi-model-calibration.git"
   },
   "description": "Append model-specific system prompts using exact or regex provider/model matching.",
   "type": "module",

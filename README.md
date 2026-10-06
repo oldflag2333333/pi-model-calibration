@@ -1,4 +1,4 @@
-# model-calibration
+# pi-model-calibration
 
 一个 Pi 插件：根据当前模型的 **provider / model ID / 展示名称**，追加专属系统提示词。
 支持精确匹配和 JavaScript 正则表达式；提示词可内联或从 Markdown 文件读取，
@@ -6,14 +6,15 @@
 
 ## 加载
 
-在这个目录的上一级执行：
+以下示例假设本地仓库目录名为 `pi-model-calibration`；已有克隆若仍使用旧目录名，
+请按实际目录替换路径。在仓库目录的上一级执行：
 
 ```bash
 # 临时加载，不修改 Pi 设置
-pi -e ./model-calibration
+pi -e ./pi-model-calibration
 
 # 安装到个人 Pi 设置（仍引用本地目录，不复制）
-pi install ./model-calibration
+pi install ./pi-model-calibration
 ```
 
 无需编译，也不需要安装运行时依赖。面向 Pi 1.0 的
@@ -27,14 +28,14 @@ pi install ./model-calibration
 可以复制示例后修改为实际的 provider / model ID：
 
 ```bash
-cp model-calibration/model-calibration.example.json ~/.pi/agent/model-calibration.json
+cp pi-model-calibration/model-calibration.example.json ~/.pi/agent/model-calibration.json
 ```
 
 或者明确指定文件（不再读取默认文件）：
 
 ```bash
-pi -e ./model-calibration \
-  --model-calibration-config ./model-calibration/model-calibration.example.json
+pi -e ./pi-model-calibration \
+  --model-calibration-config ./pi-model-calibration/model-calibration.example.json
 ```
 
 参数支持绝对路径、相对当前工作目录的路径及 `~/`。
@@ -148,7 +149,7 @@ pi -e ./model-calibration \
 ## 开发
 
 ```bash
-cd model-calibration
+cd pi-model-calibration
 npm install
 npm run check             # 类型检查 + 全部测试
 npm run test:integration  # 仅运行真实 Pi 加载/事件链测试
@@ -171,7 +172,7 @@ GitHub Actions 工作流：
 - `.github/workflows/publish.yml`：推送 `v*` 标签后先运行同一检查矩阵，
   通过后验证标签、`package.json` 和锁文件版本一致，再发布到 npm。
   正式版本使用 `latest`，含预发布标识的版本（如 `0.2.0-beta.0`）使用 `next`。
-  发布仅在 `oldflag2333333/model-calibration` 仓库执行。
+  发布仅在 `oldflag2333333/pi-model-calibration` 仓库执行。
 
 ### 一次性配置
 
@@ -194,7 +195,7 @@ GitHub Actions 工作流：
    | 字段 | 值 |
    |---|---|
    | Organization or user | `oldflag2333333` |
-   | Repository | `model-calibration` |
+   | Repository | `pi-model-calibration` |
    | Workflow filename | `publish.yml`（不要填写目录） |
    | Environment name | 留空（工作流未设置 environment） |
    | Allowed actions | 允许直接 `npm publish`，不能只允许 stage publish |
