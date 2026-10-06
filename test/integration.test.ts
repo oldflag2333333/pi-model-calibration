@@ -108,6 +108,61 @@ test("Pi loads the package manifest, respects agent dir and switches calibration
   assert.ok(!(await h.run()).text.includes("model_calibration"));
 });
 
+for (const append of ["", "USER ADDENDUM"]) {
+  test(`Pi places calibration before project context with addendum ${JSON.stringify(append)}`, async (t) => {
+    const h = await harness(t, { rules: [
+      { model: "model-a", prompt: "A_{model}" }, { model: "model-b", prompt: "B_{model}" },
+    ] });
+    h.base.appendSystemPrompt = append;
+    if (!append) h.base.customPrompt = undefined;
+    h.base.contextFiles = [{ path: "AGENTS.md", content: "PROJECT INSTRUCTIONS" }];
+    const first = (await h.run()).text;
+    assert.ok(first.includes("<model_calibration>\nA_model-a\n</model_calibration>"));
+    assert.ok(first.indexOf("<model_calibration>") < first.indexOf("<project_context>"));
+    assert.ok(first.indexOf("</model_calibration>") < first.indexOf("</addendum>"));
+    assert.ok(first.includes("PROJECT INSTRUCTIONS"));
+    assert.ok(first.includes("<existing>\nKEEP"));
+    if (append) assert.ok(first.indexOf(append) < first.indexOf("<model_calibration>"));
+    assert.equal((await h.run()).text, first);
+    assert.equal(h.base.appendSystemPrompt, append);
+    h.select("model-b");
+    const second = (await h.run()).text;
+    assert.ok(second.includes("B_model-b"));
+    assert.ok(!second.includes("A_model-a"));
+
+    await h.update({ rules: [{ prompt: "UPDATED" }] });
+    const updated = (await h.run()).text;
+    assert.ok(updated.includes("UPDATED"));
+    assert.ok(updated.indexOf("<model_calibration>") < updated.indexOf("<project_context>"));
+    assert.equal(updated.split("<model_calibration>").length, 2);
+    await h.update({ enabled: false, rules: [{ prompt: "OFF" }] });
+    assert.ok(!(await h.run()).text.includes("model_calibration"));
+    await h.update({ rules: [{ promptFile: "missing.md" }] });
+    assert.ok(!(await h.run()).text.includes("model_calibration"));
+  });
+}
+
+test("before-project-context preserves addendum overrides and later context changes", async (t) => {
+  const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] },
+    'pi.on("before_agent_start", event => { event.systemPromptOptions.sections.addendum = "CUSTOM ADDENDUM"; });',
+    'pi.on("before_agent_start", event => { event.systemPromptOptions.contextFiles.push({ path: "LATER.md", content: "LATER CONTEXT" }); });');
+  h.base.appendSystemPrompt = "";
+  const { text } = await h.run();
+  assert.ok(text.includes("CUSTOM ADDENDUM\n\n<model_calibration>\nCALIBRATE"));
+  assert.ok(text.indexOf("</model_calibration>") < text.indexOf("<project_context>"));
+  assert.ok(text.includes("LATER CONTEXT"));
+});
+
+test("before-project-context works without context and falls back for opaque prompts", async (t) => {
+  const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] });
+  h.base.appendSystemPrompt = "";
+  const { text } = await h.run();
+  assert.ok(text.includes("<addendum>\n<model_calibration>\nCALIBRATE"));
+  assert.ok(!text.includes("<project_context>"));
+  h.base.forceSystemPrompt = "OPAQUE";
+  assert.equal((await h.run()).text, "OPAQUE\n\n<model_calibration>\nCALIBRATE\n</model_calibration>");
+});
+
 test("Pi composes calibration with earlier and later structured-prompt extensions", async (t) => {
   const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] },
     'pi.on("before_agent_start", event => { event.systemPromptOptions.sections.before = "BEFORE"; });',

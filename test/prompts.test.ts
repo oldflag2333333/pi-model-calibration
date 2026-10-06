@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { loadConfig, selectRules } from "../src/config.ts";
+import { loadConfig, parseConfig, selectRules } from "../src/config.ts";
 import { resolvePrompts } from "../src/prompts.ts";
 
 const model = { provider: "openai", id: "gpt-5" };
@@ -16,7 +16,7 @@ async function fixture(t: TestContext) {
   const path = join(dir, "rules.json");
   const load = async (config: unknown) => {
     await writeFile(path, JSON.stringify(config));
-    return resolvePrompts(selectRules(await loadConfig(path), model), path);
+    return resolvePrompts(selectRules(await loadConfig(path), model), path, model);
   };
   return { root, dir, path, load };
 }
@@ -31,6 +31,24 @@ test("resolves prompt files relative to config, preserves order and refreshes co
   assert.deepEqual((await h.load(config)).map((rule) => rule.prompt), ["before", "# Model\nFirst version", "after"]);
   await writeFile(file, "# Model\nOther version");
   assert.equal((await h.load(config))[1].prompt, "# Model\nOther version");
+});
+
+test("renders placeholders in inline and file prompts, leaving unrelated braces intact", async (t) => {
+  const h = await fixture(t);
+  const template = '你是 {provider} 提供的 {model} 模型。\\n{provider}/{model} {unknown} {Model} {"key": "value"}';
+  const expected = '你是 openai 提供的 gpt-5 模型。\\nopenai/gpt-5 {unknown} {Model} {"key": "value"}';
+  // Only content is interpolated, not the promptFile path.
+  await writeFile(join(h.dir, "{model}.md"), template);
+  const rules = await h.load({ rules: [{ prompt: template }, { promptFile: "{model}.md" }] });
+  assert.deepEqual(rules.map((rule) => rule.prompt), [expected, expected]);
+});
+
+test("placeholder values are literal and not recursively expanded", async () => {
+  const identity = { provider: "$&-{model}", id: "$1-{provider}" };
+  const config = parseConfig({ rules: [{ prompt: "{provider} / {model}" }] });
+  const rules = await resolvePrompts(selectRules(config, identity), "rules.json", identity);
+  assert.equal(rules[0].prompt, "$&-{model} / $1-{provider}");
+  assert.equal(config.rules[0].prompt, "{provider} / {model}");
 });
 
 test("does not read files for disabled or unmatched rules", async (t) => {

@@ -43,51 +43,97 @@ async function harness(t: TestContext, initial?: unknown, override?: string) {
   };
   const run = async (input = event()) => {
     const result = await handlers.get("before_agent_start")!(input, ctx);
-    return { input, result };
+    assert.equal(input.systemPromptOptions.sections.model_calibration, undefined);
+    const calibration = input.systemPromptOptions.appendSystemPrompt
+      .match(/<model_calibration>\n([\s\S]*?)\n<\/model_calibration>/)?.[1];
+    return { input, result, calibration };
   };
   return { dir, ctx, notices, handlers, commands, update, event, run };
 }
 
-test("appends a structured section while preserving unrelated prompt state", async (t) => {
+test("appends calibration to addendum while preserving unrelated prompt state", async (t) => {
   const h = await harness(t, { rules: [{ provider: "openai", prompt: "first" }, { model: "gpt-5", prompt: "second" }] });
   const { input, result } = await h.run();
   assert.equal(result, undefined);
-  assert.deepEqual(input.systemPromptOptions.sections, { existing: "preserve me", model_calibration: "first\n\nsecond" });
-  assert.equal(input.systemPromptOptions.appendSystemPrompt, "original addendum");
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "first\n\nsecond");
+  assert.deepEqual(input.systemPromptOptions.sections, { existing: "preserve me" });
+  assert.equal(input.systemPromptOptions.appendSystemPrompt, "original addendum\n\n<model_calibration>\nfirst\n\nsecond\n</model_calibration>");
+  assert.equal((await h.run()).calibration, "first\n\nsecond");
 });
 
 test("switching models removes old calibration on the next run", async (t) => {
   const h = await harness(t, { rules: [
     { model: "gpt-5", prompt: "GPT only" }, { model: "claude-sonnet", prompt: "Claude only" },
   ] });
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "GPT only");
+  assert.equal((await h.run()).calibration, "GPT only");
   h.ctx.model = { ...h.ctx.model!, provider: "anthropic", id: "claude-sonnet" };
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "Claude only");
+  assert.equal((await h.run()).calibration, "Claude only");
   h.ctx.model = { ...h.ctx.model, id: "other" };
   const event = h.event();
   event.systemPromptOptions.sections = { existing: "preserve me", model_calibration: "stale" };
-  assert.equal((await h.run(event)).input.systemPromptOptions.sections.model_calibration, undefined);
+  assert.equal((await h.run(event)).calibration, undefined);
+});
+
+test("renders current model placeholders for runs, opaque overrides and inspection", async (t) => {
+  const h = await harness(t, { rules: [
+    { name: "identity", prompt: "你是 {provider} 提供的 {model} 模型。" },
+    { promptFile: "identity.md" },
+  ] });
+  await writeFile(join(h.dir, "identity.md"), "{provider}/{model}");
+  assert.equal((await h.run()).calibration,
+    "你是 openai 提供的 gpt-5 模型。\n\nopenai/gpt-5");
+  h.ctx.model = { ...h.ctx.model!, provider: "xxx", id: "glm-5.3-flash" };
+  const expected = "你是 xxx 提供的 glm-5.3-flash 模型。\n\nxxx/glm-5.3-flash";
+  assert.equal((await h.run()).calibration, expected);
+  assert.equal((await h.run(h.event("opaque"))).result?.systemPrompt,
+    `opaque\n\n<model_calibration>\n${expected}\n</model_calibration>`);
+  await h.commands.get("model-calibration")!.handler("", h.ctx);
+  assert.ok(h.notices[0].includes("[identity]\n你是 xxx 提供的 glm-5.3-flash 模型。"));
+  assert.ok(h.notices[0].includes("xxx/glm-5.3-flash"));
+  assert.ok(!h.notices[0].includes("{provider}"));
+  assert.ok(!h.notices[0].includes("{model}"));
+  h.ctx.model = undefined;
+  assert.equal((await h.run()).calibration, undefined);
+});
+
+test("cleans up reused options on disable and errors", async (t) => {
+  const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] });
+  const event = h.event();
+  event.systemPromptOptions.sections.addendum = "OVERRIDE";
+  const first = (await h.run(event)).input.systemPromptOptions.appendSystemPrompt;
+  assert.equal((await h.run(event)).input.systemPromptOptions.appendSystemPrompt, first);
+  assert.equal(event.systemPromptOptions.sections.addendum,
+    "OVERRIDE\n\n<model_calibration>\nCALIBRATE\n</model_calibration>");
+  await h.update({ enabled: false, rules: [{ prompt: "CALIBRATE" }] });
+  await h.run(event);
+  assert.equal(event.systemPromptOptions.appendSystemPrompt, "original addendum");
+  assert.equal(event.systemPromptOptions.sections.addendum, "OVERRIDE");
+  await h.update({ rules: [{ prompt: "CALIBRATE" }] });
+  await h.run(event);
+  await h.update({});
+  await h.run(event);
+  assert.equal(event.systemPromptOptions.appendSystemPrompt, "original addendum");
+  assert.equal(event.systemPromptOptions.sections.addendum, "OVERRIDE");
+  assert.equal(event.systemPromptOptions.sections.model_calibration, undefined);
 });
 
 test("reads changed config on every run without needing reload", async (t) => {
   const h = await harness(t, { rules: [{ prompt: "before" }] });
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "before");
+  assert.equal((await h.run()).calibration, "before");
   await h.update({ rules: [{ prompt: "after" }] });
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "after");
+  assert.equal((await h.run()).calibration, "after");
   await h.update({ enabled: false, rules: [{ prompt: "after" }] });
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, undefined);
+  assert.equal((await h.run()).calibration, undefined);
 });
 
 test("invalid config warns once, never applies stale rules, and recovers", async (t) => {
   const h = await harness(t, { rules: [{ prompt: "good" }] });
   await h.run();
   await h.update({ rules: [{ prompt: "partial" }, { model: { regex: "[" }, prompt: "broken" }] });
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, undefined);
+  assert.equal((await h.run()).calibration, undefined);
   await h.run();
   assert.equal(h.notices.length, 1);
   await h.update({ rules: [{ prompt: "recovered" }] });
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "recovered");
+  assert.equal((await h.run()).calibration, "recovered");
   await h.update({});
   await h.run();
   assert.equal(h.notices.length, 2);
@@ -95,22 +141,22 @@ test("invalid config warns once, never applies stale rules, and recovers", async
 
 test("no config or no active model is a no-op", async (t) => {
   const h = await harness(t);
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, undefined);
+  assert.equal((await h.run()).calibration, undefined);
   assert.deepEqual(h.notices, []);
   await h.update({ rules: [{ prompt: "global" }] });
   h.ctx.model = undefined;
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, undefined);
+  assert.equal((await h.run()).calibration, undefined);
 });
 
 test("relative explicit config path resolves against cwd", async (t) => {
   const h = await harness(t, undefined, "custom.json");
   await writeFile(join(h.dir, "custom.json"), JSON.stringify({ rules: [{ prompt: "custom" }] }));
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "custom");
+  assert.equal((await h.run()).calibration, "custom");
 });
 
 test("missing explicit config warns rather than silently using defaults", async (t) => {
   const h = await harness(t, { rules: [{ prompt: "default" }] }, "missing.json");
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, undefined);
+  assert.equal((await h.run()).calibration, undefined);
   assert.match(h.notices[0], /missing.json/);
 });
 
@@ -143,18 +189,18 @@ test("prompt files refresh on every run and failure applies no partial or stale 
   const h = await harness(t, { rules: [{ prompt: "inline" }, { name: "file-rule", promptFile: "prompt.md" }] });
   const file = join(h.dir, "prompt.md");
   await writeFile(file, "before");
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "inline\n\nbefore");
+  assert.equal((await h.run()).calibration, "inline\n\nbefore");
   await writeFile(file, "after");
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "inline\n\nafter");
+  assert.equal((await h.run()).calibration, "inline\n\nafter");
   await rm(file);
   const stale = h.event();
   stale.systemPromptOptions.sections.model_calibration = "stale";
-  assert.equal((await h.run(stale)).input.systemPromptOptions.sections.model_calibration, undefined);
+  assert.equal((await h.run(stale)).calibration, undefined);
   await h.run();
   assert.equal(h.notices.length, 1);
   assert.match(h.notices[0], /file-rule.*promptFile.*prompt.md/);
   await writeFile(file, "recovered");
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, "inline\n\nrecovered");
+  assert.equal((await h.run()).calibration, "inline\n\nrecovered");
 });
 
 test("inspection distinguishes matching, unmatched and disabled rules and shows file sources", async (t) => {
@@ -209,6 +255,6 @@ test("does not auto-load a project config when the default config is absent", as
   const h = await harness(t);
   await mkdir(join(h.dir, ".pi"));
   await writeFile(join(h.dir, ".pi/model-calibration.json"), JSON.stringify({ rules: [{ prompt: "PROJECT" }] }));
-  assert.equal((await h.run()).input.systemPromptOptions.sections.model_calibration, undefined);
+  assert.equal((await h.run()).calibration, undefined);
   assert.deepEqual(h.notices, []);
 });

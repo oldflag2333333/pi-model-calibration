@@ -8,6 +8,8 @@ const sectionName = "model_calibration";
 
 export function registerCalibration(pi: ExtensionAPI, defaultPath: string) {
   let lastError: string | undefined;
+  // Pi normally supplies fresh options; also handle unchanged options reused by a host.
+  const cleanups = new WeakMap<object, () => void>();
 
   pi.registerFlag("model-calibration-config", {
     description: "Path to model-calibration JSON rules (relative to cwd or absolute)",
@@ -25,7 +27,7 @@ export function registerCalibration(pi: ExtensionAPI, defaultPath: string) {
     const { path, allowMissing } = configPath(ctx);
     try {
       const config = await loadConfig(path, allowMissing);
-      const rules = await resolvePrompts(selectRules(config, ctx.model), path);
+      const rules = await resolvePrompts(selectRules(config, ctx.model), path, ctx.model);
       lastError = undefined;
       return { path, config, rules };
     } catch (error) {
@@ -45,16 +47,34 @@ export function registerCalibration(pi: ExtensionAPI, defaultPath: string) {
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
+    const options = event.systemPromptOptions;
+    cleanups.get(options)?.();
+    cleanups.delete(options);
     const state = await currentRules(ctx);
     const prompt = state?.rules.map((rule) => rule.prompt).join("\n\n");
     // This section belongs to this extension; no match means no calibration.
-    delete event.systemPromptOptions.sections[sectionName];
-    if (!prompt) return;
+    delete options.sections[sectionName];
+    if (!state || !prompt) return;
 
-    event.systemPromptOptions.sections[sectionName] = prompt;
-    // A previous extension's opaque full-prompt override ignores sections.
-    if (event.systemPromptOptions.forceSystemPrompt !== undefined) {
-      return { systemPrompt: `${event.systemPrompt}\n\n<${sectionName}>\n${prompt}\n</${sectionName}>` };
+    const block = `<${sectionName}>\n${prompt}\n</${sectionName}>`;
+    // Pi renders addendum before project_context, unlike custom sections.
+    const originalAppend = options.appendSystemPrompt;
+    const originalAddendum = options.sections.addendum;
+    const appended = [originalAppend, block].filter(Boolean).join("\n\n");
+    const addendum = [originalAddendum, block].filter(Boolean).join("\n\n");
+    options.appendSystemPrompt = appended;
+    // Respect an earlier extension's addendum override, which wins over appendSystemPrompt.
+    if (originalAddendum) options.sections.addendum = addendum;
+    cleanups.set(options, () => {
+      if (options.appendSystemPrompt === appended) options.appendSystemPrompt = originalAppend;
+      if (originalAddendum && options.sections.addendum === addendum) {
+        options.sections.addendum = originalAddendum;
+      }
+    });
+    // An opaque full-prompt override has no reliable project-context boundary.
+    // Preserve it and fall back to appending.
+    if (options.forceSystemPrompt !== undefined) {
+      return { systemPrompt: `${event.systemPrompt}\n\n${block}` };
     }
   });
 

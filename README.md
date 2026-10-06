@@ -2,7 +2,7 @@
 
 一个 Pi 插件：根据当前模型的 **provider / model ID / 展示名称**，追加专属系统提示词。
 支持精确匹配和 JavaScript 正则表达式；提示词可内联或从 Markdown 文件读取，
-正常情况下作为独立 section 追加，不替换 Pi 原有提示词。
+固定插入到 Project Context 之前，不替换 Pi 原有提示词。
 
 ## 加载
 
@@ -82,6 +82,32 @@ pi -e ./pi-model-calibration \
   正则无效或字段拼错时，会提示错误并停止应用该文件的全部规则，
   不会沿用旧规则或应用半份配置。
 
+### 提示词占位符
+
+内联 `prompt` 和 `promptFile` 文件内容都支持：
+
+- `{provider}`：当前模型的 provider（`ctx.model.provider`）。
+- `{model}`：当前模型 ID（`ctx.model.id`），不是展示名称。
+
+例如：
+
+```json
+{
+  "rules": [
+    {
+      "prompt": "你是 {provider} 提供的 {model} 模型，请准确回答用户的问题。"
+    }
+  ]
+}
+```
+
+当 provider 为 `xxx`、模型 ID 为 `glm-5.3-flash` 时，实际追加：
+`你是 xxx 提供的 glm-5.3-flash 模型，请准确回答用户的问题。`
+
+占位符区分大小写，所有出现位置都会替换；未知占位符和其它花括号内容保持原样。
+替换值不会再次展开。只替换提示词正文，不替换匹配条件或 `promptFile` 路径。
+每次运行按当前模型重新替换，`/model-calibration` 也会显示替换后的提示词。
+
 ### 外部提示词文件
 
 长提示词建议使用 `promptFile`，例如：
@@ -120,6 +146,16 @@ pi -e ./pi-model-calibration \
 原有的内联 `prompt` 配置无需迁移。不要直接复用 `model-calibration-glm`
 的配置：它的 `match` 嵌套结构与本插件不兼容，本插件会明确拒绝而不是放宽匹配。
 
+### 插入位置
+
+校准提示词固定放在原有 addendum 内容之后、**Project Context 之前**，无需配置位置。
+即使没有 Project Context，也会在 skills / cwd 之前插入。
+
+使用 Pi 的 `addendum` section，内部以 `<model_calibration>` 包裹，
+保留原有附加提示词和项目上下文。
+若更早的插件设置了不透明的完整提示词覆盖，无法可靠定位 Project Context，
+会保留完整提示词并回退到末尾追加；更晚的插件覆盖 addendum 或完整提示词也可能覆盖本插件内容。
+
 ### 生效时机与诊断
 
 每次 `before_agent_start` 都重新读取配置并匹配当前模型，修改配置无需重启；
@@ -138,9 +174,9 @@ pi -e ./pi-model-calibration \
 
 ## 实现方式
 
-使用 `systemPromptOptions.sections.model_calibration` 追加独立 section，
-保留其它 section，交由 Pi 记录提示词变化，不直接改写会话历史。
-当前无规则命中时，不添加校准 section。
+使用 `systemPromptOptions.appendSystemPrompt`，若已有 `sections.addendum` 覆盖则同步追加，
+让 Pi 在项目上下文之前渲染校准文本。保留其它内容，交由 Pi 记录提示词变化，不直接改写会话历史。
+当前无规则命中时，不添加校准文本。
 
 若更早执行的插件设置了完整 `forceSystemPrompt`，则保留它并在末尾追加校准文本；
 更晚执行的插件若强行覆盖整段提示词，可能覆盖本插件内容。
