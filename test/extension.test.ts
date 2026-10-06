@@ -28,16 +28,16 @@ async function harness(t: TestContext, initial?: unknown, override?: string) {
   registerCalibration(pi, path);
   const update = (config: unknown) => writeFile(path, JSON.stringify(config));
   if (initial !== undefined) await update(initial);
-  const event = (forceSystemPrompt?: string): BeforeAgentStartEvent => {
+  const event = (): BeforeAgentStartEvent => {
     // Pi 1.0.4 requires hiddenTools; the intersection also keeps this fixture
     // type-checked against Pi 1.0.2, whose prompt options do not declare it.
     const systemPromptOptions: BeforeAgentStartEvent["systemPromptOptions"] & { hiddenTools: string[] } = {
       cwd: dir, sections: { existing: "preserve me" }, appendSystemPrompt: "original addendum",
       selectedTools: [], hiddenTools: [], toolSnippets: {}, toolGuidelines: {}, promptGuidelines: [],
-      contextFiles: [], skills: [], forceSystemPrompt,
+      contextFiles: [], skills: [],
     };
     return {
-      type: "before_agent_start", prompt: "test", systemPrompt: forceSystemPrompt ?? "original",
+      type: "before_agent_start", prompt: "test", systemPrompt: "original",
       systemPromptOptions,
     } satisfies BeforeAgentStartEvent;
   };
@@ -73,7 +73,7 @@ test("switching models removes old calibration on the next run", async (t) => {
   assert.equal((await h.run(event)).calibration, undefined);
 });
 
-test("renders current model placeholders for runs, opaque overrides and inspection", async (t) => {
+test("renders current model placeholders for runs and inspection", async (t) => {
   const h = await harness(t, { rules: [
     { name: "identity", prompt: "你是 {provider} 提供的 {model} 模型。" },
     { promptFile: "identity.md" },
@@ -84,8 +84,6 @@ test("renders current model placeholders for runs, opaque overrides and inspecti
   h.ctx.model = { ...h.ctx.model!, provider: "xxx", id: "glm-5.3-flash" };
   const expected = "你是 xxx 提供的 glm-5.3-flash 模型。\n\nxxx/glm-5.3-flash";
   assert.equal((await h.run()).calibration, expected);
-  assert.equal((await h.run(h.event("opaque"))).result?.systemPrompt,
-    `opaque\n\n<model_calibration>\n${expected}\n</model_calibration>`);
   await h.commands.get("model-calibration")!.handler("", h.ctx);
   assert.ok(h.notices[0].includes("[identity]\n你是 xxx 提供的 glm-5.3-flash 模型。"));
   assert.ok(h.notices[0].includes("xxx/glm-5.3-flash"));
@@ -98,21 +96,16 @@ test("renders current model placeholders for runs, opaque overrides and inspecti
 test("cleans up reused options on disable and errors", async (t) => {
   const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] });
   const event = h.event();
-  event.systemPromptOptions.sections.addendum = "OVERRIDE";
   const first = (await h.run(event)).input.systemPromptOptions.appendSystemPrompt;
   assert.equal((await h.run(event)).input.systemPromptOptions.appendSystemPrompt, first);
-  assert.equal(event.systemPromptOptions.sections.addendum,
-    "OVERRIDE\n\n<model_calibration>\nCALIBRATE\n</model_calibration>");
   await h.update({ enabled: false, rules: [{ prompt: "CALIBRATE" }] });
   await h.run(event);
   assert.equal(event.systemPromptOptions.appendSystemPrompt, "original addendum");
-  assert.equal(event.systemPromptOptions.sections.addendum, "OVERRIDE");
   await h.update({ rules: [{ prompt: "CALIBRATE" }] });
   await h.run(event);
   await h.update({});
   await h.run(event);
   assert.equal(event.systemPromptOptions.appendSystemPrompt, "original addendum");
-  assert.equal(event.systemPromptOptions.sections.addendum, "OVERRIDE");
   assert.equal(event.systemPromptOptions.sections.model_calibration, undefined);
 });
 
@@ -158,12 +151,6 @@ test("missing explicit config warns rather than silently using defaults", async 
   const h = await harness(t, { rules: [{ prompt: "default" }] }, "missing.json");
   assert.equal((await h.run()).calibration, undefined);
   assert.match(h.notices[0], /missing.json/);
-});
-
-test("preserves a previous extension's opaque system prompt override", async (t) => {
-  const h = await harness(t, { rules: [{ prompt: "calibrate" }] });
-  const { result } = await h.run(h.event("opaque prompt"));
-  assert.equal(result?.systemPrompt, "opaque prompt\n\n<model_calibration>\ncalibrate\n</model_calibration>");
 });
 
 test("inspection command shows the path, model and matching prompts", async (t) => {

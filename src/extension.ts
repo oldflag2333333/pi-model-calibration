@@ -59,23 +59,11 @@ export function registerCalibration(pi: ExtensionAPI, defaultPath: string) {
     const block = `<${sectionName}>\n${prompt}\n</${sectionName}>`;
     // Pi renders addendum before project_context, unlike custom sections.
     const originalAppend = options.appendSystemPrompt;
-    const originalAddendum = options.sections.addendum;
     const appended = [originalAppend, block].filter(Boolean).join("\n\n");
-    const addendum = [originalAddendum, block].filter(Boolean).join("\n\n");
     options.appendSystemPrompt = appended;
-    // Respect an earlier extension's addendum override, which wins over appendSystemPrompt.
-    if (originalAddendum) options.sections.addendum = addendum;
     cleanups.set(options, () => {
       if (options.appendSystemPrompt === appended) options.appendSystemPrompt = originalAppend;
-      if (originalAddendum && options.sections.addendum === addendum) {
-        options.sections.addendum = originalAddendum;
-      }
     });
-    // An opaque full-prompt override has no reliable project-context boundary.
-    // Preserve it and fall back to appending.
-    if (options.forceSystemPrompt !== undefined) {
-      return { systemPrompt: `${event.systemPrompt}\n\n${block}` };
-    }
   });
 
   pi.registerCommand("model-calibration", {

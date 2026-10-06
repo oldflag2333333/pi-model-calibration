@@ -153,8 +153,7 @@ pi -e ./pi-model-calibration \
 
 使用 Pi 的 `addendum` section，内部以 `<model_calibration>` 包裹，
 保留原有附加提示词和项目上下文。
-若更早的插件设置了不透明的完整提示词覆盖，无法可靠定位 Project Context，
-会保留完整提示词并回退到末尾追加；更晚的插件覆盖 addendum 或完整提示词也可能覆盖本插件内容。
+只使用 Pi 的标准提示词扩展接口，不处理其他插件的提示词覆盖行为。
 
 ### 生效时机与诊断
 
@@ -174,12 +173,10 @@ pi -e ./pi-model-calibration \
 
 ## 实现方式
 
-使用 `systemPromptOptions.appendSystemPrompt`，若已有 `sections.addendum` 覆盖则同步追加，
+使用 `systemPromptOptions.appendSystemPrompt` 追加校准文本，
 让 Pi 在项目上下文之前渲染校准文本。保留其它内容，交由 Pi 记录提示词变化，不直接改写会话历史。
 当前无规则命中时，不添加校准文本。
 
-若更早执行的插件设置了完整 `forceSystemPrompt`，则保留它并在末尾追加校准文本；
-更晚执行的插件若强行覆盖整段提示词，可能覆盖本插件内容。
 历史轮次里的旧 section / delta 仍属于会话历史，并不会被删除。
 
 ## 开发

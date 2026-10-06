@@ -11,7 +11,7 @@ import {
 
 // Exercise Pi's actual package discovery, jiti loader, event runner and lazy prompt
 // renderer. Only host actions/model selection are supplied here; no LLM calls occur.
-async function harness(t: TestContext, config: unknown, before = "", after = "") {
+async function harness(t: TestContext, config: unknown) {
   const root = await mkdtemp(join(tmpdir(), "calibration-integration-"));
   const agentDir = join(root, "agent");
   const cwd = join(root, "project");
@@ -27,16 +27,9 @@ async function harness(t: TestContext, config: unknown, before = "", after = "")
   const configPath = join(agentDir, "model-calibration.json");
   const update = (value: unknown) => writeFile(configPath, JSON.stringify(value));
   await update(config);
-  const paths: string[] = [];
-  if (before) {
-    const path = join(root, "before.ts");
-    await writeFile(path, `export default function(pi) { ${before} }`);
-    paths.push(path);
-  }
-  paths.push(fileURLToPath(new URL("../", import.meta.url)));
+  const paths = [fileURLToPath(new URL("../", import.meta.url))];
   const observer = join(root, "observer.ts");
   await writeFile(observer, `export default function(pi) {
-    ${after}
     pi.on("before_agent_start", event => { pi.events.emit("calibration:test:prompt", event.systemPrompt); });
   }`);
   paths.push(observer);
@@ -142,49 +135,12 @@ for (const append of ["", "USER ADDENDUM"]) {
   });
 }
 
-test("before-project-context preserves addendum overrides and later context changes", async (t) => {
-  const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] },
-    'pi.on("before_agent_start", event => { event.systemPromptOptions.sections.addendum = "CUSTOM ADDENDUM"; });',
-    'pi.on("before_agent_start", event => { event.systemPromptOptions.contextFiles.push({ path: "LATER.md", content: "LATER CONTEXT" }); });');
-  h.base.appendSystemPrompt = "";
-  const { text } = await h.run();
-  assert.ok(text.includes("CUSTOM ADDENDUM\n\n<model_calibration>\nCALIBRATE"));
-  assert.ok(text.indexOf("</model_calibration>") < text.indexOf("<project_context>"));
-  assert.ok(text.includes("LATER CONTEXT"));
-});
-
-test("before-project-context works without context and falls back for opaque prompts", async (t) => {
+test("Pi inserts calibration into addendum even without project context", async (t) => {
   const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] });
   h.base.appendSystemPrompt = "";
   const { text } = await h.run();
   assert.ok(text.includes("<addendum>\n<model_calibration>\nCALIBRATE"));
   assert.ok(!text.includes("<project_context>"));
-  h.base.forceSystemPrompt = "OPAQUE";
-  assert.equal((await h.run()).text, "OPAQUE\n\n<model_calibration>\nCALIBRATE\n</model_calibration>");
-});
-
-test("Pi composes calibration with earlier and later structured-prompt extensions", async (t) => {
-  const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] },
-    'pi.on("before_agent_start", event => { event.systemPromptOptions.sections.before = "BEFORE"; });',
-    'pi.on("before_agent_start", event => { event.systemPromptOptions.sections.after = "AFTER"; });');
-  const { text } = await h.run();
-  for (const marker of ["BASE", "USER ADDENDUM", "KEEP", "BEFORE", "CALIBRATE", "AFTER"]) {
-    assert.ok(text.includes(marker), `missing ${marker}`);
-  }
-});
-
-test("Pi preserves an earlier opaque prompt override and does not retain removed calibration", async (t) => {
-  const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] },
-    'pi.on("before_agent_start", () => ({ systemPrompt: "OPAQUE" }));');
-  assert.equal((await h.run()).text, "OPAQUE\n\n<model_calibration>\nCALIBRATE\n</model_calibration>");
-  await h.update({ rules: [] });
-  assert.equal((await h.run()).text, "OPAQUE");
-});
-
-test("a later opaque override remains an explicit documented limitation", async (t) => {
-  const h = await harness(t, { rules: [{ prompt: "CALIBRATE" }] }, "",
-    'pi.on("before_agent_start", () => ({ systemPrompt: "LATER OVERRIDE" }));');
-  assert.equal((await h.run()).text, "LATER OVERRIDE");
 });
 
 test("Pi runner sees fresh file contents, fail-closed removal and recovery", async (t) => {
