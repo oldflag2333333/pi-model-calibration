@@ -16,7 +16,8 @@
     "src",
     "doc",
     "model-calibration.example.json",
-    "README.md"
+    "README.md",
+    "README.en.md"
   ],
   "pi": {
     "extensions": [

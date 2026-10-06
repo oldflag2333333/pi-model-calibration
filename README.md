@@ -1,5 +1,7 @@
 # pi-model-calibration
 
+中文 · [English](README.en.md)
+
 为不同模型设置专属系统提示词的 [Pi](https://pi.dev) 插件。
 
 如果你希望切换模型时，自动应用不同的行为要求——例如提醒某个模型避免无关重构、

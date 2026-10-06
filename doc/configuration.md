@@ -1,6 +1,6 @@
 # 配置指南
 
-[返回 README](../README.md)
+[返回 README](../README.md) · [English](configuration.en.md)
 
 ## 快速开始
 
