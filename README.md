@@ -169,7 +169,7 @@ GitHub Actions 工作流：
 
 - `.github/workflows/ci.yml`：分支推送和 PR 自动执行检查。使用 Node 22/24，
   分别检查锁文件中的 Pi 1.0.2 和 Pi 1.0.4，执行类型检查、全部测试及打包预览。
-- `.github/workflows/publish.yml`：推送 `v*` 标签后先运行同一检查矩阵，
+- `.github/workflows/release.yml`：推送 `v*` 标签后先运行同一检查矩阵，
   通过后验证标签、`package.json` 和锁文件版本一致，再发布到 npm。
   正式版本使用 `latest`，含预发布标识的版本（如 `0.2.0-beta.0`）使用 `next`。
   发布仅在 `oldflag2333333/pi-model-calibration` 仓库执行。
@@ -196,7 +196,7 @@ GitHub Actions 工作流：
    |---|---|
    | Organization or user | `oldflag2333333` |
    | Repository | `pi-model-calibration` |
-   | Workflow filename | `publish.yml`（不要填写目录） |
+   | Workflow filename | `release.yml`（不要填写目录） |
    | Environment name | 留空（工作流未设置 environment） |
    | Allowed actions | 允许直接 `npm publish`，不能只允许 stage publish |
 
