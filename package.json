@@ -1,6 +1,11 @@
 {
   "name": "pi-model-calibration",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oldflag2333333/model-calibration.git"
+  },
   "description": "Append model-specific system prompts using exact or regex provider/model matching.",
   "type": "module",
   "keywords": [

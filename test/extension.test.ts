@@ -28,14 +28,19 @@ async function harness(t: TestContext, initial?: unknown, override?: string) {
   registerCalibration(pi, path);
   const update = (config: unknown) => writeFile(path, JSON.stringify(config));
   if (initial !== undefined) await update(initial);
-  const event = (forceSystemPrompt?: string): BeforeAgentStartEvent => ({
-    type: "before_agent_start", prompt: "test", systemPrompt: forceSystemPrompt ?? "original",
-    systemPromptOptions: {
+  const event = (forceSystemPrompt?: string): BeforeAgentStartEvent => {
+    // Pi 1.0.4 requires hiddenTools; the intersection also keeps this fixture
+    // type-checked against Pi 1.0.2, whose prompt options do not declare it.
+    const systemPromptOptions: BeforeAgentStartEvent["systemPromptOptions"] & { hiddenTools: string[] } = {
       cwd: dir, sections: { existing: "preserve me" }, appendSystemPrompt: "original addendum",
-      selectedTools: [], toolSnippets: {}, toolGuidelines: {}, promptGuidelines: [],
+      selectedTools: [], hiddenTools: [], toolSnippets: {}, toolGuidelines: {}, promptGuidelines: [],
       contextFiles: [], skills: [], forceSystemPrompt,
-    },
-  } satisfies BeforeAgentStartEvent);
+    };
+    return {
+      type: "before_agent_start", prompt: "test", systemPrompt: forceSystemPrompt ?? "original",
+      systemPromptOptions,
+    } satisfies BeforeAgentStartEvent;
+  };
   const run = async (input = event()) => {
     const result = await handlers.get("before_agent_start")!(input, ctx);
     return { input, result };

@@ -17,7 +17,7 @@ pi install ./model-calibration
 ```
 
 无需编译，也不需要安装运行时依赖。面向 Pi 1.0 的
-`@earendil-works/pi-coding-agent` API。
+`@earendil-works/pi-coding-agent` API；已在 Pi 1.0.2 和 1.0.4 上通过类型检查与全部测试。
 
 ## 配置
 
@@ -161,3 +161,65 @@ npm run test:integration  # 仅运行真实 Pi 加载/事件链测试
 以及真实 Pi package 发现、jiti 加载、ExtensionRunner 和提示词渲染。
 集成测试使用临时 agent/workspace 目录，不修改个人配置、不需要 API key，
 也不发起模型请求；它不等同于 provider 请求或持久会话恢复的端到端测试。
+
+## CI 与 npm 发布
+
+GitHub Actions 工作流：
+
+- `.github/workflows/ci.yml`：分支推送和 PR 自动执行检查。使用 Node 22/24，
+  分别检查锁文件中的 Pi 1.0.2 和 Pi 1.0.4，执行类型检查、全部测试及打包预览。
+- `.github/workflows/publish.yml`：推送 `v*` 标签后先运行同一检查矩阵，
+  通过后验证标签、`package.json` 和锁文件版本一致，再发布到 npm。
+  正式版本使用 `latest`，含预发布标识的版本（如 `0.2.0-beta.0`）使用 `next`。
+  发布仅在 `oldflag2333333/model-calibration` 仓库执行。
+
+### 一次性配置
+
+发布使用 [npm Trusted Publishing（OIDC）](https://docs.npmjs.com/trusted-publishers/)，
+无需设置 `NPM_TOKEN` 或 `NODE_AUTH_TOKEN`，也不需要手动轮换凭证。
+
+1. 将这些文件提交并推送到 GitHub，确认仓库已启用 Actions。
+2. 若 npm 上尚无 `pi-model-calibration` 包，先确认包名可用，并在本地首次发布：
+
+   ```bash
+   npm login
+   npm ci
+   npm run check
+   npm publish --access public
+   ```
+
+   首次发布需要你的 npm 账号拥有包名权限，并按提示完成双因素验证。
+3. 在 npm 包的 **Settings → Trusted publishing** 中添加 GitHub Actions：
+
+   | 字段 | 值 |
+   |---|---|
+   | Organization or user | `oldflag2333333` |
+   | Repository | `model-calibration` |
+   | Workflow filename | `publish.yml`（不要填写目录） |
+   | Environment name | 留空（工作流未设置 environment） |
+   | Allowed actions | 允许直接 `npm publish`，不能只允许 stage publish |
+
+4. 建议在 GitHub Rulesets 中限制 `v*` 标签的创建、更新和删除权限。
+   OIDC 发布确认成功后，可在 npm 中选择要求双因素验证并禁止传统 token 发布。
+
+工作流使用 GitHub 托管的 runner、Node 24 和 npm 11，
+仅发布 job 获得 `id-token: write`；PR 检查不具备发布权限。
+公开仓库发布公开包时，npm Trusted Publishing 自动生成 provenance。
+
+### 后续发布
+
+先合并变更到 `main`，提交所有修改并保持工作区干净，然后执行：
+
+```bash
+npm version patch                   # 也可使用 minor / major
+git push origin HEAD --follow-tags
+```
+
+`npm version` 会同步修改清单和锁文件，创建版本提交与 `v*` 标签。
+首次手动发布 `0.1.0` 后，下一次应发布 `0.1.1` 或更高版本，
+不要再用 `v0.1.0` 触发同一版本发布；npm 不允许覆盖已发布版本。
+在 GitHub Actions 页面查看检查和发布结果；这些配置不会自动创建 GitHub Release。
+
+## 许可证
+
+[MIT](LICENSE)，Copyright (c) 2026 oldflag2333333。
